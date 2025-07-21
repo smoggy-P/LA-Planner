@@ -1,0 +1,36 @@
+<launch>
+  <arg name="rviz" default="true" />
+  <arg name="auto_trigger" default="true" />
+
+  <group if="$(arg rviz)">
+    <include file="$(find exploration_manager)/launch/include/rviz.launch" />
+  </group>
+
+  <include file="$(find map_publisher)/launch/map_publisher.launch">
+    <arg name="file_name" value="map1/scene.ply" />
+  </include>
+
+  <include file="$(find exploration_manager)/launch/include/exploration.launch">
+    <arg name="auto_trigger" value="$(arg auto_trigger)" />
+    <arg name="feature_filename" value="map1/feature.ply" />
+    <arg name="ft_filename" value="map1.yaml" />
+    <arg name="init_x" value="-13.0" />
+    <arg name="init_y" value="13.0" />
+    <arg name="init_z" value="1.0" />
+    <arg name="goal_x" value="10.0" />
+    <arg name="goal_y" value="-10.0" />
+    <arg name="goal_z" value="2.0" />
+    <arg name="import_map_size_x" value="50.0" />
+    <arg name="import_map_size_y" value="50.0" />
+    <arg name="import_map_size_z" value="5.1" />
+    <arg name="import_box_min_x" value="-15.0" />
+    <arg name="import_box_min_y" value="-15.0" />
+    <arg name="import_box_min_z" value="0.5" />
+    <arg name="import_box_max_x" value="15.0" />
+    <arg name="import_box_max_y" value="15.0" />
+    <arg name="import_box_max_z" value="4.0" />
+    <arg name="min_feature_num_plan" value="15" />
+    <arg name="min_covisible_feature_num_plan" value="11" />
+  </include>
+
+</launch>

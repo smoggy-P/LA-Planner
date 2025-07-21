@@ -1,0 +1,33 @@
+frontier:
+  we: 1.0
+  wg: 1.0
+  wf: 0.0
+  wc: 1.0
+  candidate_dphi: 0.523598775  # 30 * pi / 180
+  candidate_rnum: 5
+  candidate_rmin: 0.0
+  candidate_rmax: 1.5
+  feature_sample_dphi: 0.2617993875  # 15 * pi / 180
+  z_sample_max_length: 0.25
+  z_sample_num: 3
+  cand_limit_per_cluster: 5
+
+  feature:
+    candidate_dphi: 0.523598775  # 30 * pi / 180
+    candidate_rnum: 5
+    candidate_rmin: 1.0
+    candidate_rmax: 8.0
+    feature_sample_dphi: 0.523598775  # 30 * pi / 180
+    z_sample_max_length: 1.0
+    z_sample_num: 3
+    cand_limit_per_cluster: 5
+
+  final:
+    candidate_dphi: 0.2617993875  # 15 * pi / 180
+    candidate_rnum: 4
+    candidate_rmin: 0.5
+    candidate_rmax: 4.5
+    feature_sample_dphi: 0.2617993875  # 15 * pi / 180
+    z_sample_max_length: 0.5
+    z_sample_num: 3
+    cand_limit_per_cluster: 5
