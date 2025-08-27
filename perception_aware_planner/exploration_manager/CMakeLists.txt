@@ -45,6 +45,6 @@ add_executable(exploration_node
   )
 target_link_libraries(exploration_node 
   ${catkin_LIBRARIES}
-  # ${PCL_LIBRARIES}
+  ${PCL_LIBRARIES}
   # -ldw
   )
