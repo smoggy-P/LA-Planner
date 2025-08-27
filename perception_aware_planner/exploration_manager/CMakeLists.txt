@@ -8,7 +8,7 @@ set(CMAKE_BUILD_TYPE Debug)
 
 
 find_package(Eigen3 REQUIRED)
-find_package(PCL 1.7 REQUIRED)
+find_package(PCL REQUIRED)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -34,6 +34,9 @@ include_directories(
   ${PCL_INCLUDE_DIRS}
 )
 
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
+
 add_executable(exploration_node
   src/exploration_node.cpp 
   src/perception_aware_exploration_fsm.cpp
@@ -42,5 +45,6 @@ add_executable(exploration_node
   )
 target_link_libraries(exploration_node 
   ${catkin_LIBRARIES}
+  # ${PCL_LIBRARIES}
   # -ldw
   )
