@@ -41,6 +41,7 @@ add_executable(exploration_node
   src/failure_detector.cpp
   )
 target_link_libraries(exploration_node 
+    ${PCL_LIBRARIES}
   ${catkin_LIBRARIES}
   # -ldw
   )

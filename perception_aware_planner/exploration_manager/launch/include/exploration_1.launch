@@ -1,0 +1,163 @@
+<launch>
+  <arg name="auto_trigger" />
+
+  <!-- size of map, change the size in x, y, z according to your application -->
+  <arg name="import_map_size_x" />
+  <arg name="import_map_size_y" />
+  <arg name="import_map_size_z" />
+
+  <arg name="import_box_min_x" />
+  <arg name="import_box_min_y" />
+  <arg name="import_box_min_z" />
+  <arg name="import_box_max_x" />
+  <arg name="import_box_max_y" />
+  <arg name="import_box_max_z" />
+
+  <arg name="init_x" />
+  <arg name="init_y" />
+  <arg name="init_z" />
+
+  <arg name="goal_x" />
+  <arg name="goal_y" />
+  <arg name="goal_z" />
+
+  <arg name="feature_filename" />
+  <arg name="ft_filename" />
+  
+
+  <!-- Config1 -->
+  <arg name="min_feature_num_act" value="8" />
+  <arg name="min_covisible_feature_num_act" value="6" />
+
+  <arg name="min_feature_num_plan" />
+  <arg name="min_covisible_feature_num_plan" />
+
+  <arg name="replan_time" value="0.045" />
+  <arg name="replan_out" value="2.0" />
+
+  <!-- topic of your odometry such as VIO or LIO -->
+  <arg name="odom_topic" value="/drone/odom" />
+
+  <!-- main algorithm params -->
+  <include file="$(find exploration_manager)/launch/include/algorithm.xml">
+    <arg name="auto_trigger" value="$(arg auto_trigger)" />
+    <arg name="feature_filename" value="$(find map_publisher)/data/$(arg feature_filename)" />
+    <arg name="ft_param_filename" value="$(find exploration_manager)/config/ft_param/$(arg ft_filename)" />
+
+    <arg name="map_size_x" value="$(arg import_map_size_x)" />
+    <arg name="map_size_y" value="$(arg import_map_size_y)" />
+    <arg name="map_size_z" value="$(arg import_map_size_z)" />
+
+    <arg name="box_min_x" value="$(arg import_box_min_x)" />
+    <arg name="box_min_y" value="$(arg import_box_min_y)" />
+    <arg name="box_min_z" value="$(arg import_box_min_z)" />
+    <arg name="box_max_x" value="$(arg import_box_max_x)" />
+    <arg name="box_max_y" value="$(arg import_box_max_y)" />
+    <arg name="box_max_z" value="$(arg import_box_max_z)" />
+
+    <arg name="odometry_topic" value="$(arg odom_topic)" />
+    <!-- sensor pose: transform of camera frame in the world frame -->
+    <arg name="sensor_pose_topic" value="/pcl_render_node/sensor_pose" />
+    <!-- depth topic: depth image, 640x480 by default -->
+    <!-- cloud topic: point cloud measurement  -->
+    <!-- subscribe ONLY TO ONE of the two topics -->
+    <arg name="depth_topic" value="/pcl_render_node/depth" />
+    <arg name="cloud_topic" value="/pcl_render_node/cloud" />
+
+    <!-- intrinsic params of the depth camera -->
+    <arg name="cx" value="321.04638671875" />
+    <arg name="cy" value="243.44969177246094" />
+    <arg name="fx" value="387.229248046875" />
+    <arg name="fy" value="387.229248046875" />
+
+    <!-- Slow -->
+    <!-- <arg name="max_vel" value="0.30" />
+    <arg name="max_acc" value="0.30" />
+    <arg name="replan_time" value="$(arg replan_time)" />
+    <arg name="replan_out" value="$(arg replan_out)" />
+    <arg name="thresh_replan1" value="0.5" />
+    <arg name="thresh_replan2" value="1.5" />
+    <arg name="thresh_replan3" value="4.0" />
+    <arg name="thresh_replan4" value="0.2" />
+    <arg name="max_yaw_rate" value="0.6" /> -->
+
+    <!-- Middle -->
+    <arg name="max_vel" value="1.5" />
+    <arg name="max_acc" value="2.25" />
+    <arg name="replan_time" value="$(arg replan_time)" />
+    <arg name="replan_out" value="$(arg replan_out)" />
+    <arg name="thresh_replan1" value="0.01" />
+    <arg name="thresh_replan2" value="1.0" />
+    <arg name="thresh_replan3" value="2.0" />
+    <arg name="thresh_replan4" value="0.2" />
+    <arg name="max_yaw_rate" value="1.2" />
+
+    <!-- Fast -->
+    <!-- <arg name="max_vel" value="2.0" />
+    <arg name="max_acc" value="2.0" />
+    <arg name="replan_time" value="$(arg replan_time)" />
+    <arg name="replan_out" value="$(arg replan_out)" />
+    <arg name="thresh_replan1" value="0.15" />
+    <arg name="thresh_replan2" value="0.15" />
+    <arg name="thresh_replan3" value="0.5" />
+    <arg name="thresh_replan4" value="0.2" />
+    <arg name="max_yaw_rate" value="1.2" /> -->
+
+    <arg name="min_feature_num_act" value="$(arg min_feature_num_act)" />
+    <arg name="min_covisible_feature_num_act" value="$(arg min_covisible_feature_num_act)" />
+
+    <arg name="min_feature_num_plan" value="$(arg min_feature_num_plan)" />
+    <arg name="min_covisible_feature_num_plan" value="$(arg min_covisible_feature_num_plan)" />
+
+    <!-- 1: use 2D Nav Goal to select goal  -->
+    <!-- 2: use global waypoints below  -->
+    <arg name="flight_type" value="2" />
+
+    <arg name="point_num" value="1" />
+
+    <arg name="point0_x" value="$(arg goal_x)" />
+    <arg name="point0_y" value="$(arg goal_y)" />
+    <arg name="point0_z" value="$(arg goal_z)" />
+
+    <arg name="point1_x" value="$(arg init_x)" />
+    <arg name="point1_y" value="$(arg init_y)" />
+    <arg name="point1_z" value="$(arg init_z)" />
+  </include>
+
+  <!-- trajectory server -->
+  <node pkg="local_plan_manager" name="traj_server" type="traj_server" output="screen" required="true">
+    <remap from="/odom_world" to="$(arg odom_topic)" />
+
+    <param name="traj_server/init_x" value="$(arg init_x)" type="double" />
+    <param name="traj_server/init_y" value="$(arg init_y)" type="double" />
+    <param name="traj_server/init_z" value="$(arg init_z)" type="double" />
+    <param name="traj_server/replan_time" value="$(arg replan_time)" type="double" />
+    <param name="traj_server/replan_out" value="$(arg replan_out)" type="double" />
+
+  </node>
+
+  <group unless="$(arg auto_trigger)">
+    <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator" output="screen">
+      <remap from="~odom" to="$(arg odom_topic)" />
+      <remap from="~goal" to="/move_base_simple/goal" />
+      <remap from="~traj_start_trigger" to="/traj_start_trigger" />
+      <param name="waypoint_type" value="manual-lonely-waypoint" />
+    </node>
+  </group>
+
+  <!-- use simulator -->
+  <include file="$(find exploration_manager)/launch/include/simulator.xml">
+    <arg name="map_size_x_" value="$(arg import_map_size_x)" />
+    <arg name="map_size_y_" value="$(arg import_map_size_y)" />
+    <arg name="map_size_z_" value="$(arg import_map_size_z)" />
+
+    <arg name="init_x" value="$(arg init_x)" />
+    <arg name="init_y" value="$(arg init_y)" />
+    <arg name="init_z" value="$(arg init_z)" />
+
+    <arg name="odometry_topic" value="$(arg odom_topic)" />
+    <arg name="c_num" value="0" />
+    <arg name="p_num" value="130" />
+  </include>
+
+</launch>
