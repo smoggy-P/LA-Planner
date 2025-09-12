@@ -48,6 +48,10 @@ public:
   void sensorPoseCallback(const geometry_msgs::PoseStampedConstPtr& pose);
   void visFeatureMap();
 
+  void pointCloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg);
+  void updateFeatureMap(const pcl::PointCloud<pcl::PointXYZ>::Ptr& new_features);
+  void reset();
+
   int getFeatureUsingCamPosOrient(const Vector3d& pos, const Quaterniond& orient, vector<pair<int, Vector3d>>& res);
   int getFeatureUsingCamPosOrient(const Vector3d& pos, const Quaterniond& orient, set<int>& res) {
     res.clear();
@@ -134,13 +138,14 @@ public:
 
 private:
   // Publishers && Subscribers
-  ros::Subscriber odom_sub_, sensorpos_sub;
+  ros::Subscriber odom_sub_, sensorpos_sub, pointcloud_sub_;
   ros::Publisher feature_map_pub_, visual_feature_cloud_pub_;
 
   pcl::PointCloud<pcl::PointXYZ> features_cloud_;
   pcl::PointCloud<pcl::PointXYZ>::Ptr known_features_cloud_;
   pcl::KdTreeFLANN<pcl::PointXYZ> features_kdtree_;
   vector<bool> known_flag_;
+  double merge_radius_ = 0.5;  // m
 };
 }  // namespace perception_aware_planner
 

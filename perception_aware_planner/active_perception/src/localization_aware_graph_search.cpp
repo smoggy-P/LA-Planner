@@ -64,8 +64,8 @@ void LocalizationAwareGraphSearch::addNode(
       node->visible_features_.set(feature_id);  // Set the corresponding bit
     }
 
-    else
-      std::cerr << "Feature index " << feature_id << " is out of range (0-" << (MAX_FEATURES - 1) << ").\n";
+    // else
+      // std::cerr << "Feature index " << feature_id << " is out of range (0-" << (MAX_FEATURES - 1) << ").\n";
   }
 
   node->type_ = type;

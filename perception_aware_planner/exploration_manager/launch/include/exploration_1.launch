@@ -1,36 +1,36 @@
 <launch>
-  <arg name="auto_trigger" />
+  <arg name="auto_trigger" value="false"/>
 
   <!-- size of map, change the size in x, y, z according to your application -->
-  <arg name="import_map_size_x" />
-  <arg name="import_map_size_y" />
-  <arg name="import_map_size_z" />
+  <arg name="import_map_size_x" value="50"/>
+  <arg name="import_map_size_y" value="50"/>
+  <arg name="import_map_size_z" value="5"/>
 
-  <arg name="import_box_min_x" />
-  <arg name="import_box_min_y" />
-  <arg name="import_box_min_z" />
-  <arg name="import_box_max_x" />
-  <arg name="import_box_max_y" />
-  <arg name="import_box_max_z" />
+  <arg name="import_box_min_x" value="-15"/>
+  <arg name="import_box_min_y" value="-15"/>
+  <arg name="import_box_min_z" value="0.5"/>
+  <arg name="import_box_max_x" value="15"/>
+  <arg name="import_box_max_y" value="15"/>
+  <arg name="import_box_max_z" value="5"/>
 
-  <arg name="init_x" />
-  <arg name="init_y" />
-  <arg name="init_z" />
+  <arg name="init_x" value="1.0"/>
+  <arg name="init_y" value="0.0"/>
+  <arg name="init_z" value="1.0"/>
 
-  <arg name="goal_x" />
-  <arg name="goal_y" />
-  <arg name="goal_z" />
+  <arg name="goal_x" value="10.0"/>
+  <arg name="goal_y" value="10.0"/>
+  <arg name="goal_z" value="1.0"/>
 
-  <arg name="feature_filename" />
-  <arg name="ft_filename" />
+  <arg name="feature_filename" value="map1/feature.ply" />
+  <arg name="ft_filename" value="map1.yaml" />
   
 
   <!-- Config1 -->
-  <arg name="min_feature_num_act" value="8" />
-  <arg name="min_covisible_feature_num_act" value="6" />
+  <arg name="min_feature_num_act" value="4" />
+  <arg name="min_covisible_feature_num_act" value="4" />
 
-  <arg name="min_feature_num_plan" />
-  <arg name="min_covisible_feature_num_plan" />
+  <arg name="min_feature_num_plan" value="5" />
+  <arg name="min_covisible_feature_num_plan" value="5" />
 
   <arg name="replan_time" value="0.045" />
   <arg name="replan_out" value="2.0" />
@@ -57,18 +57,18 @@
 
     <arg name="odometry_topic" value="$(arg odom_topic)" />
     <!-- sensor pose: transform of camera frame in the world frame -->
-    <arg name="sensor_pose_topic" value="/pcl_render_node/sensor_pose" />
+    <arg name="sensor_pose_topic" value="/drone/gt_pose" />
     <!-- depth topic: depth image, 640x480 by default -->
     <!-- cloud topic: point cloud measurement  -->
     <!-- subscribe ONLY TO ONE of the two topics -->
-    <arg name="depth_topic" value="/pcl_render_node/depth" />
-    <arg name="cloud_topic" value="/pcl_render_node/cloud" />
+    <arg name="depth_topic" value="/D435i_camera/depth/image_rect_raw" />
+    <arg name="cloud_topic" value="/D435i_camera/depth/color/points" />
 
     <!-- intrinsic params of the depth camera -->
-    <arg name="cx" value="321.04638671875" />
-    <arg name="cy" value="243.44969177246094" />
-    <arg name="fx" value="387.229248046875" />
-    <arg name="fy" value="387.229248046875" />
+    <arg name="cx" value="640" />
+    <arg name="cy" value="360" />
+    <arg name="fx" value="695.99511719" />
+    <arg name="fy" value="695.99511719" />
 
     <!-- Slow -->
     <!-- <arg name="max_vel" value="0.30" />
@@ -146,7 +146,7 @@
   </group>
 
   <!-- use simulator -->
-  <include file="$(find exploration_manager)/launch/include/simulator.xml">
+  <!-- <include file="$(find exploration_manager)/launch/include/simulator.xml">
     <arg name="map_size_x_" value="$(arg import_map_size_x)" />
     <arg name="map_size_y_" value="$(arg import_map_size_y)" />
     <arg name="map_size_z_" value="$(arg import_map_size_z)" />
@@ -158,6 +158,6 @@
     <arg name="odometry_topic" value="$(arg odom_topic)" />
     <arg name="c_num" value="0" />
     <arg name="p_num" value="130" />
-  </include>
+  </include> -->
 
 </launch>

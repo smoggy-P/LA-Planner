@@ -1,7 +1,5 @@
 #include "plan_env/feature_map.h"
-
 #include "plan_env/sdf_map.h"
-
 #include <execution>
 
 using namespace Eigen;
@@ -14,46 +12,68 @@ void FeatureMap::setMap(shared_ptr<SDFMap>& global_map, shared_ptr<SDFMap>& map)
 }
 
 void FeatureMap::initMap(ros::NodeHandle& nh) {
-
-  std::string filename;
-  nh.param<std::string>("feature/filename", filename, "");
-  loadMap(filename);
-  known_flag_.assign(features_cloud_.size(), false);
+  features_cloud_.clear();
+  known_flag_.clear();
   known_features_cloud_.reset(new pcl::PointCloud<pcl::PointXYZ>);
 
   feature_cam_ = Utils::getGlobalParam().feature_cam_;
 
-  odom_sub_ = nh.subscribe("/odom_world", 1, &FeatureMap::odometryCallback, this);
-  sensorpos_sub = nh.subscribe("/map_ros/pose", 1, &FeatureMap::sensorPoseCallback, this);
+  pointcloud_sub_ = nh.subscribe("/r2d2/point_cloud", 1, &FeatureMap::pointCloudCallback, this);
+  
+  odom_sub_ = nh.subscribe("/drone/odom", 10000, &FeatureMap::odometryCallback, this);
+  sensorpos_sub = nh.subscribe("/drone/gt_pose", 10000, &FeatureMap::sensorPoseCallback, this);
   feature_map_pub_ = nh.advertise<sensor_msgs::PointCloud2>("/feature/feature_map", 10);
   visual_feature_cloud_pub_ = nh.advertise<sensor_msgs::PointCloud2>("/feature/visual_feature_cloud", 10);
 }
 
-void FeatureMap::loadMap(const string& filename) {
-  features_cloud_.clear();
-  bool use_simple_features = (filename == "");
-  if (use_simple_features) {
-    // Features at the central of the wall
-    for (double y = 3.0; y < 17.0; y += 0.2) {
-      for (double z = 0.0; z < 5.0; z += 0.2) {
-        pcl::PointXYZ p;
-        p.x = 5.0;
-        p.y = y;
-        p.z = z;
-        features_cloud_.push_back(p);
-      }
-    }
-  }
+void FeatureMap::pointCloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg) {
+  pcl::PointCloud<pcl::PointXYZ>::Ptr new_features(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::fromROSMsg(*msg, *new_features);
+  
+  updateFeatureMap(new_features);
+}
 
-  else {
-    if (pcl::io::loadPLYFile<pcl::PointXYZ>(filename, features_cloud_) == -1) {
-      ROS_ERROR("[FeatureMap] Failed to load PLY file: %s", filename.c_str());
-      return;
-    }
+void FeatureMap::updateFeatureMap(const pcl::PointCloud<pcl::PointXYZ>::Ptr& new_features) {
+  if (new_features->empty()) return;
+
+  if (features_cloud_.empty()) {
+    features_cloud_ = *new_features;
+    *known_features_cloud_ = features_cloud_;
+    known_flag_.assign(features_cloud_.size(), true);
+    features_kdtree_.setInputCloud(features_cloud_.makeShared());
+    visFeatureMap();
+    return;
   }
 
   features_kdtree_.setInputCloud(features_cloud_.makeShared());
-  ROS_WARN("[FeatureMap] Load Success!!! filename: %s features num:%zu", filename.c_str(), features_cloud_.size());
+
+  for (const auto& pt : new_features->points) {
+    std::vector<int> indices;
+    std::vector<float> sqr_distances;
+
+    if (features_kdtree_.radiusSearch(pt, merge_radius_, indices, sqr_distances) > 0) {
+      for (int idx : indices) {
+        features_cloud_.points[idx].x = 0.5f * (features_cloud_.points[idx].x + pt.x);
+        features_cloud_.points[idx].y = 0.5f * (features_cloud_.points[idx].y + pt.y);
+        features_cloud_.points[idx].z = 0.5f * (features_cloud_.points[idx].z + pt.z);
+      }
+    } else {
+      features_cloud_.points.push_back(pt);
+      known_flag_.push_back(true);
+    }
+  }
+
+  ROS_INFO("[FeatureMap] Feature map merged, now has %lu features.", features_cloud_.size());
+
+  *known_features_cloud_ = features_cloud_;
+  features_kdtree_.setInputCloud(features_cloud_.makeShared());
+  visFeatureMap();
+}
+
+void FeatureMap::loadMap(const string& filename) {
+  features_cloud_.clear();
+  features_kdtree_.setInputCloud(features_cloud_.makeShared());
+  ROS_WARN("[FeatureMap] loadMap called but using sensor-based mode, ignoring file: %s", filename.c_str());
 }
 
 void FeatureMap::getFeatureCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) {
@@ -82,50 +102,14 @@ void FeatureMap::odometryCallback(const nav_msgs::OdometryConstPtr& msg) {
 }
 
 void FeatureMap::sensorPoseCallback(const geometry_msgs::PoseStampedConstPtr& pose) {
-  Vector3d camera_p;
-  camera_p(0) = pose->pose.position.x;
-  camera_p(1) = pose->pose.position.y;
-  camera_p(2) = pose->pose.position.z;
-  Quaterniond camera_q;
-  camera_q.w() = pose->pose.orientation.w;
-  camera_q.x() = pose->pose.orientation.x;
-  camera_q.y() = pose->pose.orientation.y;
-  camera_q.z() = pose->pose.orientation.z;
-
-  if (!features_cloud_.empty() && global_sdf_map_->hasInitialized_) {
-    pcl::PointXYZ searchPoint;
-    searchPoint.x = camera_p(0);
-    searchPoint.y = camera_p(1);
-    searchPoint.z = camera_p(2);
-
-    vector<int> idx_vec;
-    vector<float> dis_vec;
-    features_kdtree_.radiusSearch(searchPoint, feature_cam_->visual_max, idx_vec, dis_vec);
-
-    for (const auto& index : idx_vec) {
-      if (known_flag_[index]) continue;
-
-      Vector3d f(features_cloud_[index].x, features_cloud_[index].y, features_cloud_[index].z);
-      if (!feature_cam_->inFOV(camera_p, f, camera_q)) continue;
-
-      if (global_sdf_map_->checkObstacleBetweenPoints(camera_p, f)) continue;
-
-      known_flag_[index] = true;
-      known_features_cloud_->push_back(features_cloud_[index]);
-    }
-  }
+  double time = ros::Time::now().toSec();
   visFeatureMap();
 }
 
 void FeatureMap::visFeatureMap() {
-
   if (known_features_cloud_->empty()) return;
 
-  // ROS_INFO("[FeatureMap] Known Feature Map Size: %d", known_features_cloud_->points.size());
-  // ROS_INFO("[FeatureMap] Feature Map Size: %d", features_cloud_.points.size());
-
   known_features_cloud_->header.frame_id = "world";
-
   known_features_cloud_->width = known_features_cloud_->points.size();
   known_features_cloud_->height = 1;
   known_features_cloud_->is_dense = true;
@@ -161,11 +145,14 @@ int FeatureMap::getFeatureUsingCamPosOrient(const Vector3d& pos, const Quaternio
 }
 
 Vector3d FeatureMap::getFeatureByID(const int id) {
-  Vector3d f(features_cloud_[id].x, features_cloud_[id].y, features_cloud_[id].z);
-  return f;
+  if (id >= 0 && id < features_cloud_.size()) {
+    Vector3d f(features_cloud_[id].x, features_cloud_[id].y, features_cloud_[id].z);
+    return f;
+  }
+  return Vector3d::Zero();
 }
 
-// Method1
+
 Vector2d FeatureMap::genLocalizableCorridor(
     const vector<Vector3d>& targets, const Vector3d& pos, const Vector3d& acc, const double& yaw) {
   Vector2d ret;
@@ -234,7 +221,6 @@ void FeatureMap::genLocalizableCorridor(
   }
 }
 
-// Method2
 Vector2d FeatureMap::genLocalizableCorridor(
     const set<int>& targets, const Vector3d& pos, const Vector3d& acc, const double& yaw) {
   Vector2d ret;
@@ -256,7 +242,6 @@ Vector2d FeatureMap::genLocalizableCorridor(
         int feature_num = getFeatureUsingOdom(pos, ori, id);
         int covis_num = Utils::getSameCount(id, targets);
 
-        // All targets must be visible and have sufficient feature points
         if (covis_num < targets.size() || feature_num <= Utils::getGlobalParam().min_feature_num_plan_) break;
       }
 
@@ -269,14 +254,13 @@ Vector2d FeatureMap::genLocalizableCorridor(
   searchBoundray(true, ret(0));
   searchBoundray(false, ret(1));
 
-  if (abs(ret(0) - yaw) < 1e-4) ret(0) += 1e-3;  // ub
-  if (abs(ret(1) - yaw) < 1e-4) ret(1) -= 1e-3;  // lb
+  if (abs(ret(0) - yaw) < 1e-4) ret(0) += 1e-3;
+  if (abs(ret(1) - yaw) < 1e-4) ret(1) -= 1e-3;
 
   return ret;
 }
 
 void FeatureMap::genLocalizableCorridor(const YawOptData::Ptr& data, const MatrixXd& yaw, VectorXd& lb, VectorXd& ub) {
-
   for (size_t i = 0; i < data->pos_vec_.size(); i++) {
     const auto& pos = data->pos_vec_[i];
     const auto& acc = data->acc_vec_[i];
@@ -310,7 +294,6 @@ void FeatureMap::getYawRangeUsingPos(
 
   for (const auto& index : pointIdxRadiusSearch) {
     Eigen::Vector3d f(features_cloud_[index].x, features_cloud_[index].y, features_cloud_[index].z);
-    if (!known_flag_[index]) continue;
 
     if (feature_cam_->inVisbleDepthAtLevel(pos_transformed, f) &&
         !global_sdf_map_->checkObstacleBetweenPoints(pos_transformed, f, raycaster)) {
@@ -359,7 +342,6 @@ void FeatureMap::getFeatureIDUsingPosYaw(const Vector3d& pos, double yaw, vector
 
   for (const auto& index : pointIdxRadiusSearch) {
     Eigen::Vector3d f(features_cloud_[index].x, features_cloud_[index].y, features_cloud_[index].z);
-    if (!known_flag_[index]) continue;
 
     if (feature_cam_->inFOV(pos_transformed, f, odom_transformed) &&
         !global_sdf_map_->checkObstacleBetweenPoints(pos_transformed, f, raycaster)) {
@@ -375,7 +357,6 @@ void FeatureMap::clusterFeatures(const Vector3d& pos_now, const float& cluster_t
   pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>());
   if (features_cloud_.empty()) return;
 
-  // Step1: Collect pointcloud arround the position
   pcl::PointXYZ searchPoint;
   searchPoint.x = pos_now(0);
   searchPoint.y = pos_now(1);
@@ -386,43 +367,40 @@ void FeatureMap::clusterFeatures(const Vector3d& pos_now, const float& cluster_t
   features_kdtree_.radiusSearch(searchPoint, feature_cam_->visual_max, pointIdxRadiusSearch, pointRadiusSquaredDistance);
 
   for (const auto& index : pointIdxRadiusSearch) {
-    if (!known_flag_[index]) continue;
     filtered_cloud->points.push_back(features_cloud_[index]);
   }
 
-  // Step2: Setup KdTree for the filtered point cloud
   boost::shared_ptr<pcl::search::KdTree<pcl::PointXYZ>> tree(new pcl::search::KdTree<pcl::PointXYZ>);
   if (filtered_cloud->points.empty()) return;
   tree->setInputCloud(filtered_cloud);
 
-  // Step3: Apply Euclidean Cluster Extraction
   pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-  ec.setClusterTolerance(cluster_tolerance);  // Set the cluster tolerance (distance)
-  ec.setMinClusterSize(min_cluster_size);     // Set the minimum cluster size
-  ec.setMaxClusterSize(max_cluster_size);     // Set the maximum cluster size
-  ec.setSearchMethod(tree);                   // Use KdTree for search
-  ec.setInputCloud(filtered_cloud);           // Set the input cloud
+  ec.setClusterTolerance(cluster_tolerance);
+  ec.setMinClusterSize(min_cluster_size);
+  ec.setMaxClusterSize(max_cluster_size);
+  ec.setSearchMethod(tree);
+  ec.setInputCloud(filtered_cloud);
 
   std::vector<pcl::PointIndices> cluster_indices;
-  ec.extract(cluster_indices);  // Perform the clustering
+  ec.extract(cluster_indices);
 
-  // Step4: Iterate through the clusters and compute their centers
   for (const auto& indices : cluster_indices) {
     pcl::PointCloud<pcl::PointXYZ>::Ptr cluster_cloud(new pcl::PointCloud<pcl::PointXYZ>());
 
-    // Collect points in the cluster
     for (const auto& index : indices.indices) cluster_cloud->points.push_back(filtered_cloud->points[index]);
 
-    // Compute the centroid of the cluster
     Eigen::Vector4f centroid;
     pcl::compute3DCentroid(*cluster_cloud, centroid);
 
-    // Convert to Eigen::Vector3d (centroid position)
     Vector3d cluster_center(centroid[0], centroid[1], centroid[2]);
-
-    // Store the cluster center and point cloud in the result vector
     clustered_results.push_back({ cluster_center, cluster_cloud });
   }
+}
+
+void FeatureMap::reset() {
+  features_cloud_.clear();
+  known_flag_.clear();
+  known_features_cloud_->clear();
 }
 
 }  // namespace perception_aware_planner

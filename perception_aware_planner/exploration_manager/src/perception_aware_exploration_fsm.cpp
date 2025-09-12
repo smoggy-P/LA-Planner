@@ -471,23 +471,23 @@ void PAExplorationFSM::odometryCallback(const nav_msgs::OdometryConstPtr& msg) {
   if (exec_state_ == TASK_FAIL) return;
 
   // check the localization status
-  if (task_start_ && !failure_detector_->checkRealTime(msg->header.stamp.toSec(), odom_pos_, odom_orient_)) {
-    emergency_stop_pub_.publish(std_msgs::Empty());
-    // Fail!!! Reason: Fail to localize
-    error_code_ = LOCALIZATION;
-    transitState(TASK_FAIL, "odomCallback");
-    return;
-  }
+  // if (task_start_ && !failure_detector_->checkRealTime(msg->header.stamp.toSec(), odom_pos_, odom_orient_)) {
+  //   emergency_stop_pub_.publish(std_msgs::Empty());
+  //   // Fail!!! Reason: Fail to localize
+  //   error_code_ = LOCALIZATION;
+  //   transitState(TASK_FAIL, "odomCallback");
+  //   return;
+  // }
 
   // check the collision status
-  if (task_start_ && planner_manager_->isCollision(odom_pos_)) {
-    ROS_ERROR("[odometryCallback]: Collision detected==================================");
-    emergency_stop_pub_.publish(std_msgs::Empty());
-    // Fail!!! Reason: Collision
-    error_code_ = COLLISION;
-    transitState(TASK_FAIL, "odomCallback");
-    return;
-  }
+  // if (task_start_ && planner_manager_->isCollision(odom_pos_)) {
+  //   ROS_ERROR("[odometryCallback]: Collision detected==================================");
+  //   emergency_stop_pub_.publish(std_msgs::Empty());
+  //   // Fail!!! Reason: Collision
+  //   error_code_ = COLLISION;
+  //   transitState(TASK_FAIL, "odomCallback");
+  //   return;
+  // }
 }
 
 void PAExplorationFSM::transitState(const FSM_EXEC_STATE new_state, const string& pos_call) {
@@ -605,6 +605,7 @@ void PAExplorationFSM::setStartState(START_STATE_TYPE replan_switch) {
 
   if (replan_switch == ODOM) {
     ROS_INFO("[PAExplorationFSM::setStartState]: Start from odom");
+    ROS_INFO_STREAM("Odom pos: " << odom_pos_.transpose() << " yaw: " << odom_yaw_);
     start_pos_ = odom_pos_;
     start_vel_ = odom_vel_;
     start_acc_.setZero();
