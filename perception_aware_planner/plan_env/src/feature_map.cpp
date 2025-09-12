@@ -12,6 +12,9 @@ void FeatureMap::setMap(shared_ptr<SDFMap>& global_map, shared_ptr<SDFMap>& map)
 }
 
 void FeatureMap::initMap(ros::NodeHandle& nh) {
+
+  tf_buffer_ = std::make_shared<tf2_ros::Buffer>();
+  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
   features_cloud_.clear();
   known_flag_.clear();
   known_features_cloud_.reset(new pcl::PointCloud<pcl::PointXYZ>);
@@ -20,17 +23,32 @@ void FeatureMap::initMap(ros::NodeHandle& nh) {
 
   pointcloud_sub_ = nh.subscribe("/r2d2/point_cloud", 1, &FeatureMap::pointCloudCallback, this);
   
-  odom_sub_ = nh.subscribe("/drone/odom", 10000, &FeatureMap::odometryCallback, this);
-  sensorpos_sub = nh.subscribe("/drone/gt_pose", 10000, &FeatureMap::sensorPoseCallback, this);
+  odom_sub_ = nh.subscribe("/drone/odom", 1, &FeatureMap::odometryCallback, this);
+  sensorpos_sub = nh.subscribe("/drone/gt_pose", 1, &FeatureMap::sensorPoseCallback, this);
   feature_map_pub_ = nh.advertise<sensor_msgs::PointCloud2>("/feature/feature_map", 10);
   visual_feature_cloud_pub_ = nh.advertise<sensor_msgs::PointCloud2>("/feature/visual_feature_cloud", 10);
 }
 
 void FeatureMap::pointCloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg) {
-  pcl::PointCloud<pcl::PointXYZ>::Ptr new_features(new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::fromROSMsg(*msg, *new_features);
-  
-  updateFeatureMap(new_features);
+    static ros::Time last_time = ros::Time(0);
+    ros::Time now = ros::Time::now();
+
+    if ((now - last_time).toSec() < 1) {
+        return; 
+    }
+    last_time = now;
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr original_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::fromROSMsg(*msg, *original_cloud);
+    original_cloud->header.frame_id = msg->header.frame_id;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    
+    if (!pcl_ros::transformPointCloud("world", *original_cloud, *transformed_cloud, *tf_buffer_)) {
+        ROS_WARN("Could not transform point cloud to world frame");
+        return;
+    }
+    
+    updateFeatureMap(transformed_cloud);
 }
 
 void FeatureMap::updateFeatureMap(const pcl::PointCloud<pcl::PointXYZ>::Ptr& new_features) {
@@ -52,18 +70,12 @@ void FeatureMap::updateFeatureMap(const pcl::PointCloud<pcl::PointXYZ>::Ptr& new
     std::vector<float> sqr_distances;
 
     if (features_kdtree_.radiusSearch(pt, merge_radius_, indices, sqr_distances) > 0) {
-      for (int idx : indices) {
-        features_cloud_.points[idx].x = 0.5f * (features_cloud_.points[idx].x + pt.x);
-        features_cloud_.points[idx].y = 0.5f * (features_cloud_.points[idx].y + pt.y);
-        features_cloud_.points[idx].z = 0.5f * (features_cloud_.points[idx].z + pt.z);
-      }
     } else {
       features_cloud_.points.push_back(pt);
       known_flag_.push_back(true);
     }
   }
 
-  ROS_INFO("[FeatureMap] Feature map merged, now has %lu features.", features_cloud_.size());
 
   *known_features_cloud_ = features_cloud_;
   features_kdtree_.setInputCloud(features_cloud_.makeShared());
@@ -108,12 +120,10 @@ void FeatureMap::sensorPoseCallback(const geometry_msgs::PoseStampedConstPtr& po
 
 void FeatureMap::visFeatureMap() {
   if (known_features_cloud_->empty()) return;
-
   known_features_cloud_->header.frame_id = "world";
   known_features_cloud_->width = known_features_cloud_->points.size();
   known_features_cloud_->height = 1;
   known_features_cloud_->is_dense = true;
-
   sensor_msgs::PointCloud2 cloud_msg;
   pcl::toROSMsg(*known_features_cloud_, cloud_msg);
   feature_map_pub_.publish(cloud_msg);

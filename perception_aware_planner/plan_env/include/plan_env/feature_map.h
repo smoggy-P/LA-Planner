@@ -17,6 +17,13 @@
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/common/centroid.h>
 
+#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
+#include <pcl_ros/transforms.h>
+#include <tf2_eigen/tf2_eigen.h>
+
 using std::pair;
 using std::set;
 using std::shared_ptr;
@@ -140,6 +147,9 @@ private:
   // Publishers && Subscribers
   ros::Subscriber odom_sub_, sensorpos_sub, pointcloud_sub_;
   ros::Publisher feature_map_pub_, visual_feature_cloud_pub_;
+
+  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
   pcl::PointCloud<pcl::PointXYZ> features_cloud_;
   pcl::PointCloud<pcl::PointXYZ>::Ptr known_features_cloud_;
