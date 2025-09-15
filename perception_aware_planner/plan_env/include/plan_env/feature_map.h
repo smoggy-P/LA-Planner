@@ -156,6 +156,7 @@ private:
   pcl::KdTreeFLANN<pcl::PointXYZ> features_kdtree_;
   vector<bool> known_flag_;
   double merge_radius_ = 0.5;  // m
+  mutable std::mutex features_mutex_;
 };
 }  // namespace perception_aware_planner
 
