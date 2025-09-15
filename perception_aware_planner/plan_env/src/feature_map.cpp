@@ -54,7 +54,6 @@ void FeatureMap::initMap(ros::NodeHandle& nh) {
     return;
   }
 
-  // 适度增大队列，降低高负载下“最新消息风暴”导致的抖动
   pointcloud_sub_ = nh.subscribe("/r2d2/point_cloud", 5, &FeatureMap::pointCloudCallback, this);
   odom_sub_       = nh.subscribe("/drone/odom", 50, &FeatureMap::odometryCallback, this);
   sensorpos_sub   = nh.subscribe("/drone/gt_pose", 50, &FeatureMap::sensorPoseCallback, this);
@@ -64,7 +63,6 @@ void FeatureMap::initMap(ros::NodeHandle& nh) {
 }
 
 void FeatureMap::pointCloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg) {
-  // —— 非阻塞 TF，避免 5s 等待导致系统卡顿 ——
   if (!tf_buffer_->canTransform("world", msg->header.frame_id, msg->header.stamp, ros::Duration(0.0))) {
     ROS_WARN_THROTTLE(2.0, "[FeatureMap] TF %s->world unavailable, skip frame.", msg->header.frame_id.c_str());
     return;
@@ -81,7 +79,6 @@ void FeatureMap::pointCloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg)
     return;
   }
 
-  // 过滤非有限点，避免 KD-Tree/FLANN 处理 NaN 触发崩溃
   transformed_cloud->points.erase(
       std::remove_if(transformed_cloud->points.begin(), transformed_cloud->points.end(),
                      [](const pcl::PointXYZ& p) { return !isFiniteXYZ(p); }),
@@ -95,26 +92,22 @@ void FeatureMap::updateFeatureMap(const pcl::PointCloud<pcl::PointXYZ>::Ptr& new
 
   std::lock_guard<std::mutex> lock(features_mutex_);
 
-  // 首次填充
   if (features_cloud_.empty()) {
     features_cloud_ = *new_features;
     *known_features_cloud_ = features_cloud_;
     known_flag_.assign(features_cloud_.size(), true);
 
     if (!features_cloud_.empty()) {
-      // 注意：makeShared 会生成一个副本，保持 KD-Tree 与 features_cloud_ 内容一致即可
       features_kdtree_.setInputCloud(features_cloud_.makeShared());
     }
-    visFeatureMap(); // 不加锁的发布（当前持锁，仅读取 shared buffer，安全）
+    visFeatureMap(); 
     return;
   }
 
-  // 确保 KD-Tree 已初始化
   if (!features_kdtree_.getInputCloud() || features_kdtree_.getInputCloud()->empty()) {
     features_kdtree_.setInputCloud(features_cloud_.makeShared());
   }
 
-  // 插入新特征（基于现有 KD-Tree 去重；树在末尾统一重建）
   for (const auto& pt : new_features->points) {
     if (!isFiniteXYZ(pt)) continue;
 
@@ -133,7 +126,6 @@ void FeatureMap::updateFeatureMap(const pcl::PointCloud<pcl::PointXYZ>::Ptr& new
     }
   }
 
-  // 对齐 known_flag_
   if (features_cloud_.size() != known_flag_.size()) {
     ROS_WARN("[FeatureMap] known_flag_ size mismatch, fix it: cloud=%zu flag=%zu",
              features_cloud_.size(), known_flag_.size());
@@ -143,7 +135,6 @@ void FeatureMap::updateFeatureMap(const pcl::PointCloud<pcl::PointXYZ>::Ptr& new
       known_flag_.erase(known_flag_.begin() + features_cloud_.size(), known_flag_.end());
   }
 
-  // 更新可视化缓存与 KD-Tree
   *known_features_cloud_ = features_cloud_;
   if (!features_cloud_.empty()) {
     features_kdtree_.setInputCloud(features_cloud_.makeShared());
@@ -233,7 +224,6 @@ int FeatureMap::getFeatureUsingCamPosOrient(const Vector3d& pos, const Quaternio
 
     Vector3d f(features_cloud_[index].x, features_cloud_[index].y, features_cloud_[index].z);
 
-    // orient 可能为单位四元数或零，保持原逻辑
     const bool in_fov = (orient.norm() > 0.1) ? feature_cam_->inFOV(pos, f, orient) : feature_cam_->inFOV(pos, f);
     if (in_fov && (!global_sdf_map_ || !global_sdf_map_->checkObstacleBetweenPoints(pos, f))) {
       res.emplace_back(index, f);
@@ -260,7 +250,6 @@ Vector2d FeatureMap::genLocalizableCorridor(
   double cur_yaw = yaw;
   bool quit = false;
 
-  // —— 顺序遍历，避免并行对共享变量的竞态 —— //
   while (!quit) {
     cur_yaw += step;
     Quaterniond q = Utils::calcOrientation(cur_yaw, acc);
@@ -424,7 +413,6 @@ void FeatureMap::getYawRangeUsingPos(
                       features_cloud_[index].y,
                       features_cloud_[index].z);
 
-    // 使用相机系进行可见性判断，但障碍检查仍以世界系为准
     if (feature_cam_->inVisbleDepthAtLevel(pos_cam, f) &&
         (!global_sdf_map_ ||
          !global_sdf_map_->checkObstacleBetweenPoints(pos, f, raycaster))) {
@@ -463,7 +451,7 @@ void FeatureMap::getFeatureIDUsingPosYaw(const Vector3d& pos, double yaw, vector
   }
 
   pcl::PointXYZ searchPoint;
-  searchPoint.x = pos.x();  // —— KD-Tree 查询使用 world 坐标 —— //
+  searchPoint.x = pos.x();  
   searchPoint.y = pos.y();
   searchPoint.z = pos.z();
 
