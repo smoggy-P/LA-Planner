@@ -67,6 +67,7 @@ public:
   void resetViewpointManager();
   bool chooseNextViewpoint(vector<Vector3d>& points, vector<double>& yaws, vector<Vector3d>& frontier_cells);
   void setFinalGoal(const Vector3d& final_goal);
+  vector<Viewpoint> getViewPoints();
 
 private:
   // Params
@@ -130,6 +131,7 @@ private:
   void sampleJunctionVPs(const CandidateParams& params,
       const std::vector<std::pair<Vector3d, pcl::PointCloud<pcl::PointXYZ>::Ptr>>& clustered_results,
       vector<Viewpoint>& sampled_viewpoints);
+  void sampleViewpoints(Frontier& frontier);
   double calExplorability(const Vector3d& pos, const double& yaw, const vector<Vector3d>& cluster);
   bool computeAstarPath(Frontier& frontier);
 

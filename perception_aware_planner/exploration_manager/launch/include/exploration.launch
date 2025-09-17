@@ -112,7 +112,7 @@
     <!-- 2: use global waypoints below  -->
     <arg name="flight_type" value="1" />
 
-    <arg name="point_num" value="10" />
+    <arg name="point_num" value="1" />
 
     <arg name="point0_x" value="$(arg goal_x)" />
     <arg name="point0_y" value="$(arg goal_y)" />
@@ -145,7 +145,7 @@
   </group>
 
   <!-- use simulator -->
-  <include file="$(find exploration_manager)/launch/include/simulator.xml">
+  <!-- <include file="$(find exploration_manager)/launch/include/simulator.xml">
     <arg name="map_size_x_" value="$(arg import_map_size_x)" />
     <arg name="map_size_y_" value="$(arg import_map_size_y)" />
     <arg name="map_size_z_" value="$(arg import_map_size_z)" />
@@ -157,6 +157,6 @@
     <arg name="odometry_topic" value="$(arg odom_topic)" />
     <arg name="c_num" value="0" />
     <arg name="p_num" value="130" />
-  </include>
+  </include> -->
 
 </launch>

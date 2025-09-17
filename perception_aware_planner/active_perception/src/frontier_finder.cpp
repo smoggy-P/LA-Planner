@@ -1347,4 +1347,50 @@ void FrontierFinder::isViewpointPathFeasible(const Viewpoint& vp) {
   std::cout << "..............................................." << std::endl;
 }
 
+void FrontierFinder::sampleViewpoints(Frontier& frontier) {
+  // Evaluate sample viewpoints on circles, find ones that cover most cells
+  for (double rc = frontier_candidate_params_.candidate_rmin_, dr = (frontier_candidate_params_.candidate_rmax_ - frontier_candidate_params_.candidate_rmin_) / frontier_candidate_params_.candidate_rnum_;
+       rc <= frontier_candidate_params_.candidate_rmax_ + 1e-3; rc += dr)
+    for (double phi = -M_PI; phi < M_PI; phi += frontier_candidate_params_.candidate_dphi_) {
+      const Vector3d sample_pos = frontier.average_ + rc * Vector3d(cos(phi), sin(phi), 0);
+
+      // Qualified viewpoint is in bounding box and in safe region
+      if (!edt_env_->sdf_map_->isInBox(sample_pos) ||
+          edt_env_->sdf_map_->getInflateOccupancy(sample_pos) == 1 || isNearUnknown(sample_pos))
+        continue;
+
+      // Compute average yaw
+      // printf("sample_pos: %f, %f, %f\n", sample_pos[0], sample_pos[1], sample_pos[2]);
+      auto& cells = frontier.cells_;
+      Eigen::Vector3d ref_dir = (cells.front() - sample_pos).normalized();
+      double avg_yaw = 0.0;
+      for (int i = 1; i < cells.size(); ++i) {
+        Eigen::Vector3d dir = (cells[i] - sample_pos).normalized();
+        double yaw = acos(dir.dot(ref_dir));
+        if (ref_dir.cross(dir)[2] < 0) yaw = -yaw;
+        avg_yaw += yaw;
+      }
+      avg_yaw = avg_yaw / cells.size() + atan2(ref_dir[1], ref_dir[0]);
+      // Compute the fraction of covered and visible cells
+      vector<Vector3d> visib_cell;
+      int visib_num = countVisibleCells(sample_pos, avg_yaw, cells, visib_cell);
+      if (visib_num > min_visib_num_) {
+        Viewpoint vp = { sample_pos, avg_yaw, visib_num, 0 };
+        frontier.viewpoints_.push_back(vp);
+        // int gain = findMaxGainYaw(sample_pos, frontier, sample_yaw);
+      }
+      // }
+    }
+}
+
+vector<Viewpoint> FrontierFinder::getViewPoints(){
+    vector<Viewpoint> viewpoints;
+    // Get all viewpoints
+    for (auto frontier : frontiers_) {
+      sampleViewpoints(frontier);
+      viewpoints.insert(viewpoints.end(), frontier.viewpoints_.begin(), frontier.viewpoints_.end());
+    }
+    return viewpoints;
+  }
+
 }  // namespace perception_aware_planner

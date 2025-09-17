@@ -12,6 +12,8 @@
 
 #include <thread>
 
+#include <queue>
+
 namespace perception_aware_planner {
 
 void PAExplorationFSM::init(ros::NodeHandle& nh) {
@@ -72,9 +74,9 @@ void PAExplorationFSM::init(ros::NodeHandle& nh) {
 void PAExplorationFSM::waypointCallback(const nav_msgs::PathConstPtr& msg) {
   if (target_type_ == TARGET_TYPE::MANUAL_TARGET && msg->poses[0].pose.position.z < -0.1) return;
 
-  if (stop_count_ == waypoint_num_) return;
+  // if (stop_count_ == waypoint_num_) return;
 
-  if (exec_state_ != WAIT_TARGET) return;
+  // if (exec_state_ != WAIT_TARGET) return;
 
   ROS_WARN("Receive Goal!!!");
 
@@ -88,7 +90,7 @@ void PAExplorationFSM::waypointCallback(const nav_msgs::PathConstPtr& msg) {
     final_goal_(0) = waypoints_[current_wp_][0];
     final_goal_(1) = waypoints_[current_wp_][1];
     final_goal_(2) = waypoints_[current_wp_][2];
-    current_wp_ = (current_wp_ + 1) % waypoint_num_;
+    current_wp_ = (current_wp_ + 1);
   }
 
   visualization_->drawGoal(final_goal_, 0.3, Eigen::Vector4d(1, 0, 0, 1.0));
@@ -130,6 +132,46 @@ void PAExplorationFSM::FSMCallback(const ros::TimerEvent& e) {
       if (stop_count_ == waypoint_num_) {
         // Success!!!
         ROS_WARN_THROTTLE(1.0, "Task Success!!!");
+        if (!expl_manager_ || !expl_manager_->frontier_finder_) {
+              ROS_ERROR("Explorer manager or frontier finder is null");
+              return;
+          }
+
+          auto cmp = [](const std::pair<double, Vector3d>& a, const std::pair<double, Vector3d>& b) {
+              return a.first > b.first;
+          };
+          std::priority_queue<std::pair<double, Vector3d>, 
+                            std::vector<std::pair<double, Vector3d>>, 
+                            decltype(cmp)> pq(cmp);
+          ROS_INFO("calculating next target");
+          vector<vector<Eigen::Vector3d>> active_frontiers;
+          expl_manager_->frontier_finder_->getFrontiers(active_frontiers);
+          int i = 0;
+          for (auto viewpoints : active_frontiers) {
+            for (const auto& vp : viewpoints) {
+              ROS_INFO("viewpoint %d: [%f, %f, %f]", i++, vp(0), vp(1), vp(2));
+              pq.push(std::make_pair((vp - odom_pos_).norm(), vp));
+            }
+          }
+
+          if (!pq.empty()) {
+              nav_msgs::Path target_path;
+              target_path.header.frame_id = "map";  // 或其他合适的坐标系
+              target_path.header.stamp = ros::Time::now();
+              
+              geometry_msgs::PoseStamped pose;
+              pose.header = target_path.header;
+              pose.pose.position.x = pq.top().second.x();
+              pose.pose.position.y = pq.top().second.y();
+              pose.pose.position.z = pq.top().second.z();
+              pose.pose.orientation.w = 1.0;  // 设置单位四元数
+              
+              target_path.poses.push_back(pose);
+              ROS_INFO("next target: [%f, %f, %f]", pq.top().second.x(), pq.top().second.y(), pq.top().second.z());
+              waypointCallback(boost::make_shared<nav_msgs::Path>(target_path));
+          } else {
+              ROS_WARN("No feature viewpoint, wait for target");
+        }
         break;
       }
 
@@ -152,6 +194,46 @@ void PAExplorationFSM::FSMCallback(const ros::TimerEvent& e) {
 
       else {
         ROS_WARN_THROTTLE(1.0, "Wait For Target...");
+        if (!expl_manager_ || !expl_manager_->frontier_finder_) {
+              ROS_ERROR("Explorer manager or frontier finder is null");
+              return;
+          }
+
+          auto cmp = [](const std::pair<double, Vector3d>& a, const std::pair<double, Vector3d>& b) {
+              return a.first > b.first;
+          };
+          std::priority_queue<std::pair<double, Vector3d>, 
+                            std::vector<std::pair<double, Vector3d>>, 
+                            decltype(cmp)> pq(cmp);
+          ROS_INFO("calculating next target");
+          vector<vector<Eigen::Vector3d>> active_frontiers;
+          expl_manager_->frontier_finder_->getFrontiers(active_frontiers);
+          int i = 0;
+          for (auto viewpoints : active_frontiers) {
+            for (const auto& vp : viewpoints) {
+              ROS_INFO("viewpoint %d: [%f, %f, %f]", i++, vp(0), vp(1), vp(2));
+              pq.push(std::make_pair((vp - odom_pos_).norm(), vp));
+            }
+          }
+
+          if (!pq.empty()) {
+              nav_msgs::Path target_path;
+              target_path.header.frame_id = "map";  // 或其他合适的坐标系
+              target_path.header.stamp = ros::Time::now();
+              
+              geometry_msgs::PoseStamped pose;
+              pose.header = target_path.header;
+              pose.pose.position.x = pq.top().second.x();
+              pose.pose.position.y = pq.top().second.y();
+              pose.pose.position.z = pq.top().second.z();
+              pose.pose.orientation.w = 1.0;  // 设置单位四元数
+              
+              target_path.poses.push_back(pose);
+              ROS_INFO("next target: [%f, %f, %f]", pq.top().second.x(), pq.top().second.y(), pq.top().second.z());
+              waypointCallback(boost::make_shared<nav_msgs::Path>(target_path));
+          } else {
+              ROS_WARN("No feature viewpoint, wait for target");
+        }
         break;
       }
     }
