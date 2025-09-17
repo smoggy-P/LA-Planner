@@ -110,9 +110,9 @@
 
     <!-- 1: use 2D Nav Goal to select goal  -->
     <!-- 2: use global waypoints below  -->
-    <arg name="flight_type" value="2" />
+    <arg name="flight_type" value="1" />
 
-    <arg name="point_num" value="1" />
+    <arg name="point_num" value="10" />
 
     <arg name="point0_x" value="$(arg goal_x)" />
     <arg name="point0_y" value="$(arg goal_y)" />
