@@ -33,4 +33,6 @@
     <arg name="min_covisible_feature_num_plan" value="2" />
   </include>
 
+  <node pkg="exploration_manager" name="trajectory_bridge" type="poscmd_to_twist.py" output="screen"></node>
+
 </launch>

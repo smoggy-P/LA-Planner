@@ -111,18 +111,72 @@ void PAExplorationFSM::FSMCallback(const ros::TimerEvent& e) {
 
   ROS_INFO_STREAM_THROTTLE(1.0, "[FSM]: state: " << state_str_[int(exec_state_)]);
 
+  // ---------------- [ADD] Helper: publish nearest frontier as next waypoint ----------------
+  auto publish_nearest_frontier = [this]() -> bool {
+    if (!expl_manager_ || !expl_manager_->frontier_finder_) {
+      ROS_ERROR("Explorer manager or frontier finder is null");
+      return false;
+    }
+    auto cmp = [](const std::pair<double, Eigen::Vector3d>& a,
+                  const std::pair<double, Eigen::Vector3d>& b) { return a.first < b.first; };
+    std::priority_queue<
+        std::pair<double, Eigen::Vector3d>,
+        std::vector<std::pair<double, Eigen::Vector3d>>,
+        decltype(cmp)
+    > pq(cmp);
+
+    ROS_INFO("calculating next target");
+    std::vector<std::vector<Eigen::Vector3d>> active_frontiers;
+    expl_manager_->frontier_finder_->getFrontiers(active_frontiers);
+
+    int i = 0;
+    for (const auto& viewpoints : active_frontiers) {
+      for (const auto& vp : viewpoints) {
+        ROS_INFO("viewpoint %d: [%.3f, %.3f, %.3f]", i++, vp(0), vp(1), vp(2));
+        pq.emplace((vp - odom_pos_).norm(), vp);
+      }
+    }
+
+    if (pq.empty()) {
+      ROS_WARN("No feature viewpoint, wait for target");
+      return false;
+    }
+
+    nav_msgs::Path target_path;
+    target_path.header.frame_id = "map";
+    target_path.header.stamp = ros::Time::now();
+
+    geometry_msgs::PoseStamped pose;
+    pose.header = target_path.header;
+    pose.pose.position.x = pq.top().second.x();
+    pose.pose.position.y = pq.top().second.y();
+    pose.pose.position.z = pq.top().second.z();
+    pose.pose.orientation.w = 1.0;
+    target_path.poses.push_back(pose);
+
+    ROS_INFO("next target: [%.3f, %.3f, %.3f]",
+             pq.top().second.x(), pq.top().second.y(), pq.top().second.z());
+    waypointCallback(boost::make_shared<nav_msgs::Path>(target_path));
+    return true;
+  };
+
+  // ---------------- [ADD] Watchdogs & throttles (local static state) ----------------
+  static ros::Time last_vis_tick;
+  static int poor_vis_cnt = 0;
+  static int stuck_cnt = 0;
+  static double last_t_cur = -1.0;
+  static Eigen::Vector3d last_pos = Eigen::Vector3d::Zero();
+
   switch (exec_state_) {
     case INIT: {
       if (!have_odom_) {
         ROS_WARN_THROTTLE(1.0, "No Odom.");
         return;
       }
-
       if (expl_manager_->ed_->frontier_now.empty()) {
         ROS_WARN_THROTTLE(1.0, "No Frontier.");
         return;
       }
-
       transitState(WAIT_TARGET, "FSM");
       break;
     }
@@ -130,47 +184,9 @@ void PAExplorationFSM::FSMCallback(const ros::TimerEvent& e) {
     case WAIT_TARGET: {
 
       if (stop_count_ == waypoint_num_) {
-        // Success!!!
         ROS_WARN_THROTTLE(1.0, "Task Success!!!");
-        if (!expl_manager_ || !expl_manager_->frontier_finder_) {
-              ROS_ERROR("Explorer manager or frontier finder is null");
-              return;
-          }
-
-          auto cmp = [](const std::pair<double, Vector3d>& a, const std::pair<double, Vector3d>& b) {
-              return a.first > b.first;
-          };
-          std::priority_queue<std::pair<double, Vector3d>, 
-                            std::vector<std::pair<double, Vector3d>>, 
-                            decltype(cmp)> pq(cmp);
-          ROS_INFO("calculating next target");
-          vector<vector<Eigen::Vector3d>> active_frontiers;
-          expl_manager_->frontier_finder_->getFrontiers(active_frontiers);
-          int i = 0;
-          for (auto viewpoints : active_frontiers) {
-            for (const auto& vp : viewpoints) {
-              ROS_INFO("viewpoint %d: [%f, %f, %f]", i++, vp(0), vp(1), vp(2));
-              pq.push(std::make_pair((vp - odom_pos_).norm(), vp));
-            }
-          }
-
-          if (!pq.empty()) {
-              nav_msgs::Path target_path;
-              target_path.header.frame_id = "map";  // 或其他合适的坐标系
-              target_path.header.stamp = ros::Time::now();
-              
-              geometry_msgs::PoseStamped pose;
-              pose.header = target_path.header;
-              pose.pose.position.x = pq.top().second.x();
-              pose.pose.position.y = pq.top().second.y();
-              pose.pose.position.z = pq.top().second.z();
-              pose.pose.orientation.w = 1.0;  // 设置单位四元数
-              
-              target_path.poses.push_back(pose);
-              ROS_INFO("next target: [%f, %f, %f]", pq.top().second.x(), pq.top().second.y(), pq.top().second.z());
-              waypointCallback(boost::make_shared<nav_msgs::Path>(target_path));
-          } else {
-              ROS_WARN("No feature viewpoint, wait for target");
+        if (!publish_nearest_frontier()) {
+          // 保持等待，等待 frontiers 更新
         }
         break;
       }
@@ -178,62 +194,18 @@ void PAExplorationFSM::FSMCallback(const ros::TimerEvent& e) {
       else if (fp_->auto_trigger_) {
         ROS_WARN_THROTTLE(1.0, "Wait For Target...");
         static int count = 0;
-        if (odom_vel_.norm() < 1e-2)
-          count++;
-        else
-          count = 0;
-
+        if (odom_vel_.norm() < 1e-2) count++; else count = 0;
         if (count > 10) {
           nav_msgs::Path empty_path;
           waypointCallback(boost::make_shared<nav_msgs::Path>(empty_path));
           count = 0;
         }
-
         break;
       }
 
       else {
         ROS_WARN_THROTTLE(1.0, "Wait For Target...");
-        if (!expl_manager_ || !expl_manager_->frontier_finder_) {
-              ROS_ERROR("Explorer manager or frontier finder is null");
-              return;
-          }
-
-          auto cmp = [](const std::pair<double, Vector3d>& a, const std::pair<double, Vector3d>& b) {
-              return a.first > b.first;
-          };
-          std::priority_queue<std::pair<double, Vector3d>, 
-                            std::vector<std::pair<double, Vector3d>>, 
-                            decltype(cmp)> pq(cmp);
-          ROS_INFO("calculating next target");
-          vector<vector<Eigen::Vector3d>> active_frontiers;
-          expl_manager_->frontier_finder_->getFrontiers(active_frontiers);
-          int i = 0;
-          for (auto viewpoints : active_frontiers) {
-            for (const auto& vp : viewpoints) {
-              ROS_INFO("viewpoint %d: [%f, %f, %f]", i++, vp(0), vp(1), vp(2));
-              pq.push(std::make_pair((vp - odom_pos_).norm(), vp));
-            }
-          }
-
-          if (!pq.empty()) {
-              nav_msgs::Path target_path;
-              target_path.header.frame_id = "map";  // 或其他合适的坐标系
-              target_path.header.stamp = ros::Time::now();
-              
-              geometry_msgs::PoseStamped pose;
-              pose.header = target_path.header;
-              pose.pose.position.x = pq.top().second.x();
-              pose.pose.position.y = pq.top().second.y();
-              pose.pose.position.z = pq.top().second.z();
-              pose.pose.orientation.w = 1.0;  // 设置单位四元数
-              
-              target_path.poses.push_back(pose);
-              ROS_INFO("next target: [%f, %f, %f]", pq.top().second.x(), pq.top().second.y(), pq.top().second.z());
-              waypointCallback(boost::make_shared<nav_msgs::Path>(target_path));
-          } else {
-              ROS_WARN("No feature viewpoint, wait for target");
-        }
+        (void)publish_nearest_frontier();
         break;
       }
     }
@@ -243,7 +215,6 @@ void PAExplorationFSM::FSMCallback(const ros::TimerEvent& e) {
       static bool first_enter_start_ = true;
       if (first_enter_start_) {
         chooseBestViewpoint();
-
         origin_pos_ = expl_manager_->ngd_->pos_;
         expl_manager_->frontier_finder_->resetViewpointManager();
         first_enter_start_ = false;
@@ -258,13 +229,10 @@ void PAExplorationFSM::FSMCallback(const ros::TimerEvent& e) {
         case GOTO_FINAL_GOAL:
         case TMP_VIEWPOINT: {
           last_fail_reason = NONE;
-
           transitState(PUB_TRAJ, "FSM");
           first_enter_start_ = true;
-
           break;
         }
-
         case LOCAL_PLAN_FAIL: {
           ROS_ERROR("This viewpoint is not availabe-----------------------------");
           if (!transitViewpoint()) {
@@ -274,16 +242,31 @@ void PAExplorationFSM::FSMCallback(const ros::TimerEvent& e) {
           break;
         }
       }
-
       break;
     }
 
     case PUB_TRAJ: {
+      // ---------------- [ADD] Null / invalid guard ----------------
+      if (!last_traj_) {
+        ROS_ERROR("No last_traj_ in PUB_TRAJ, force REPLAN");
+        transitState(REPLAN, "FSM");
+        break;
+      }
       double dt = (ros::Time::now() - last_traj_->start_time_).toSec();
+      if (!std::isfinite(dt) || dt < 0.0) {
+        ROS_WARN_THROTTLE(1.0, "Invalid traj start time (dt=%.3f), force REPLAN", dt);
+        transitState(REPLAN, "FSM");
+        break;
+      }
 
       if (dt > 0) {
         traj_pub_.publish(last_traj_msg_);
         visualization_->clearUnreachableMarker();
+        // 重置看门狗基线
+        last_t_cur = -1.0;
+        stuck_cnt = 0;
+        poor_vis_cnt = 0;
+        last_pos = odom_pos_;
         transitState(MOVE_TO_NEXT_GOAL, "FSM");
       }
       break;
@@ -294,45 +277,87 @@ void PAExplorationFSM::FSMCallback(const ros::TimerEvent& e) {
       const auto& type = expl_manager_->ngd_->type_;
       ROS_ASSERT(type != LOCAL_PLAN_FAIL);
 
-      // Use another thread to visualize
-      thread vis_thread(&PAExplorationFSM::visualize, this);
-      vis_thread.detach();
+      // ---------------- [MOD] 可视化线程节流 ----------------
+      if ((ros::Time::now() - last_vis_tick).toSec() > 0.5) {
+        thread vis_thread(&PAExplorationFSM::visualize, this);
+        vis_thread.detach();
+        last_vis_tick = ros::Time::now();
+      }
 
-      // Don't replan if current state is bad for localization
-      if (!failure_detector_->checkSingleFrameVisibility(odom_pos_, odom_orient_)) break;
+      // ---------------- [MOD] 可见性看门狗 ----------------
+      if (!failure_detector_->checkSingleFrameVisibility(odom_pos_, odom_orient_)) {
+        poor_vis_cnt++;
+        ROS_WARN_THROTTLE(1.0, "[Replan Gate] Poor visibility (%d)", poor_vis_cnt);
+        if (poor_vis_cnt > 10) { // 约 ~1s（取决于回调频率）
+          ROS_WARN("[Replan]: Visibility stuck -> REPLAN");
+          poor_vis_cnt = 0;
+          transitState(REPLAN, "FSM");
+        }
+        break; // 先退出本轮
+      } else {
+        poor_vis_cnt = 0;
+      }
 
       visualization_->fail_reason = last_fail_reason;
 
       LocalTrajData* info = &planner_manager_->local_data_;
       double t_cur = (ros::Time::now() - info->start_time_).toSec();
-      double time_to_end = info->duration_ - t_cur;
+      double duration = info->duration_;
 
-      // Replan if traj is almost fully executed
+      // ---------------- [ADD] 时间健壮性与卡死看门狗 ----------------
+      if (!std::isfinite(t_cur) || !std::isfinite(duration) || duration <= 0.0) {
+        ROS_WARN("[Replan]: Invalid traj timing (t_cur=%.3f, duration=%.3f) -> REPLAN",
+                 t_cur, duration);
+        transitState(REPLAN, "FSM");
+        break;
+      }
+      if (t_cur < 0.0) { // 仿真时间回退
+        ROS_WARN("[Replan]: Negative t_cur (%.3f), sim time glitch -> REPLAN", t_cur);
+        transitState(REPLAN, "FSM");
+        break;
+      }
+
+      // 进度看门狗：时间不前进 & 位置不前进
+      const bool time_stuck = (last_t_cur >= 0.0 && (t_cur - last_t_cur) < 1e-3);
+      const bool pos_stuck  = ((odom_pos_ - last_pos).norm() < 0.02 && odom_vel_.norm() < 1e-2);
+      if (time_stuck && pos_stuck) {
+        stuck_cnt++;
+        ROS_WARN_THROTTLE(1.0, "[Replan]: Progress stuck cnt=%d (t_cur=%.3f)", stuck_cnt, t_cur);
+        if (stuck_cnt > 50) { // ~5s
+          ROS_WARN("[Replan]: Progress watchdog -> REPLAN");
+          stuck_cnt = 0;
+          transitState(REPLAN, "FSM");
+          break;
+        }
+      } else {
+        stuck_cnt = 0;
+        last_pos = odom_pos_;
+        last_t_cur = t_cur;
+      }
+
+      double time_to_end = duration - t_cur;
+
+      // ---------------- [MOD] 原有 replan 条件保持，但已确保 t_cur/时间有效 ----------------
       if (time_to_end < fp_->replan_thresh1_) {
         if (type == REACH_FINAL_GOAL) {
           transitState(WAIT_TARGET, "FSM");
           ROS_WARN("[Replan]: Reach final goal=================================");
-        }
-
-        else {
+        } else {
           transitState(REPLAN, "FSM");
           ROS_WARN("[Replan]: Reach tmp viewpoint=================================");
         }
       }
 
-      // Don't replan if the final goal is at the end of trajectory
       else if (type == REACH_FINAL_GOAL) {
         ROS_WARN_THROTTLE(1.0, "[Replan]: Final final goal,reject to replan====================");
       }
 
-      // Replan if next frontier to be visited is covered
       else if (t_cur > fp_->replan_thresh2_ &&
                expl_manager_->frontier_finder_->isinterstFrontierCovered(expl_manager_->ngd_->frontier_cell_)) {
         transitState(REPLAN, "FSM");
         ROS_WARN("[Replan]: Cluster covered=====================================");
       }
 
-      // Replan after some time
       else if (t_cur > fp_->replan_thresh3_) {
         transitState(REPLAN, "FSM");
         ROS_WARN("[Replan]: Periodic call=================================");
